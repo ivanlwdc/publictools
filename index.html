@@ -1,16 +1,127 @@
-{
-  "name": "Dynamic Object Deployer",
-  "version": "1.0",
-  "description": "Deploys the Dynamic Object auto-update script to Gaia Embedded gateways.",
-  "author": "Ivan LWDC",
-  "homepage": "https://ivanlwdc.github.io/publictools/",
-  "extensions": [
-    {
-      "action-identifier": "deploy-dyn-obj",
-      "action-title": "Deploy Dynamic Object Script",
-      "context": ["gateway"],
-      "type": "window",
-      "url": "https://ivanlwdc.github.io/publictools/index.html"
-    }
-  ]
-}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Deploy Script</title>
+    <script type="text/javascript" src="smc.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; background-color: #f9f9f9; color: #333; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #004b87; }
+        button { padding: 12px 24px; background: #0078D7; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        button:hover { background: #005a9e; }
+        button:disabled { background: #cccccc; cursor: not-allowed; }
+        #log { margin-top: 20px; padding: 15px; background: #1e1e1e; color: #d4d4d4; border-radius: 4px; white-space: pre-wrap; font-family: Consolas, monospace; font-size: 13px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Deploy Dynamic Object Script</h2>
+        <p>Target Gateway: <strong id="gateway-name" style="color: #d9534f;">Loading...</strong></p>
+        
+        <button id="deployBtn" onclick="deployScript()">Deploy Script Over SIC</button>
+
+        <div id="log">Awaiting action... Right-click a gateway in SmartConsole to begin.</div>
+    </div>
+
+    <script>
+        var targetGateway = "";
+
+        // 1. Get the gateway name from SmartConsole context
+        SMC.getContext(function(context) {
+            if (context && context.objects && context.objects.length > 0) {
+                targetGateway = context.objects[0].name;
+                document.getElementById("gateway-name").innerText = targetGateway;
+                document.getElementById("gateway-name").style.color = "#5cb85c";
+            }
+        });
+
+        // 2. Execute Deployment
+        function deployScript() {
+            if (!targetGateway) return;
+            document.getElementById("log").innerText = "Packaging payload and deploying to " + targetGateway + "...\nPlease wait.";
+            document.getElementById("deployBtn").disabled = true;
+
+            // The massive bash payload wrapped safely in JS backticks
+            var scriptPayload = `
+cat << 'MAIN_SCRIPT' > /storage/dyn_obj_update.sh
+#!/bin/sh
+# Dynamic Object Auto-Creation & Update Script (State-Aware)
+
+MAX_WAIT=180
+WAIT_COUNT=0
+while [ "$WAIT_COUNT" -lt "$MAX_WAIT" ]; do
+    if /pfrm2.0/bin/clish -c "show interfaces all" 2>/dev/null | grep -q "ipv4-address:[ \\t]*[0-9]"; then
+        sleep 5
+        break
+    fi
+    sleep 5
+    WAIT_COUNT=$((WAIT_COUNT + 5))
+done
+
+ROUTES=$(ip route)
+IFACES=$(/pfrm2.0/bin/clish -c "show interfaces all")
+WANS=$(/pfrm2.0/bin/clish -c "show internet-connections")
+
+PARSED_DATA=$(echo "$ROUTES" | awk -v ifaces="$IFACES" -v wans="$WANS" '
+function ip2int(ip,   a) { split(ip, a, "."); return (a[1] * 16777216) + (a[2] * 65536) + (a[3] * 256) + a[4] }
+function int2ip(num,   a, b, c, d) { a = int(num / 16777216) % 256; b = int(num / 65536) % 256; c = int(num / 256) % 256; d = int(num) % 256; return a"."b"."c"."d }
+function mask2cidr(mask,   a, i, cidr) { split(mask, a, "."); cidr = 0; for(i=1; i<=4; i++) { while(a[i] > 0) { cidr += a[i] % 2; a[i] = int(a[i] / 2) } } return cidr }
+function process_wan() { if (wan_name != "" && wan_ip != "" && wan_mask != "") { cidr = mask2cidr(wan_mask); ip_int = ip2int(wan_ip); mask_int = 4294967295 - (2^(32-cidr) - 1); net_int = 0; temp_ip = ip_int; temp_mask = mask_int; mult = 1; for (b=0; b<32; b++) { if ((temp_ip % 2) == 1 && (temp_mask % 2) == 1) net_int += mult; temp_ip = int(temp_ip / 2); temp_mask = int(temp_mask / 2); mult *= 2; } w_start_ip = int2ip(net_int); w_end_int = net_int + (2^(32-cidr)) - 1; w_end_ip = int2ip(w_end_int); print "NET_"wan_name, w_start_ip, w_end_ip; print "HOST_"wan_name, wan_ip, wan_ip; } wan_name = ""; wan_ip = ""; wan_mask = "" }
+BEGIN { n = split(ifaces, lines, "\\n"); name = ""; for (i=1; i<=n; i++) { gsub(/\\r/, "", lines[i]); if (lines[i] ~ /^name:/) { sub(/^name:/, "", lines[i]); name = lines[i]; gsub(/^[ \\t]+|[ \\t]+$/, "", name); gsub(/_Switch/, "", name) } if (lines[i] ~ /^ipv4-address:/) { sub(/^ipv4-address:/, "", lines[i]); ip = lines[i]; gsub(/^[ \\t]+|[ \\t]+$/, "", ip); if (ip != "" && name != "") ip_map[name] = ip } if (lines[i] ~ /^description:/) { sub(/^description:/, "", lines[i]); desc = lines[i]; gsub(/^[ \\t]+|[ \\t]+$/, "", desc); if (desc != "" && name != "") desc_map[name] = desc } } }
+$1 ~ /^[0-9]/ && $1 !~ /^127\\./ { split($1, cidr_arr, "/"); start_ip = cidr_arr[1]; mask = cidr_arr[2]; if (mask == "") mask = 32; start_int = ip2int(start_ip); end_int = start_int + (2^(32-mask)) - 1; end_ip = int2ip(end_int); iface = ""; for(k=1; k<=NF; k++) { if ($k == "dev") { iface = $(k+1); break } } if (iface != "" && iface in desc_map) { print "NET_"desc_map[iface], start_ip, end_ip } }
+END { for (ifc in desc_map) { if (ip_map[ifc] != "") print "HOST_"desc_map[ifc], ip_map[ifc], ip_map[ifc] } w = split(wans, wlines, "\\n"); wan_name = ""; wan_ip = ""; wan_mask = ""; for (i=1; i<=w; i++) { gsub(/\\r/, "", wlines[i]); if (wlines[i] ~ /^id:/ && wan_name != "") process_wan(); if (wlines[i] ~ /^name:/) { sub(/^name:/, "", wlines[i]); wan_name = wlines[i]; gsub(/^[ \\t]+|[ \\t]+$/, "", wan_name) } if (wlines[i] ~ /^ip-address:/) { sub(/^ip-address:/, "", wlines[i]); wan_ip = wlines[i]; gsub(/^[ \\t]+|[ \\t]+$/, "", wan_ip) } if (wlines[i] ~ /^subnet-mask:/) { sub(/^subnet-mask:/, "", wlines[i]); wan_mask = wlines[i]; gsub(/^[ \\t]+|[ \\t]+$/, "", wan_mask) } } process_wan() }')
+
+echo "$PARSED_DATA" | while read obj_name new_start new_end; do
+    [ -z "$obj_name" ] && continue
+    if ! dynamic_objects -l | grep -q "object name : $obj_name$"; then dynamic_objects -n "$obj_name" >/dev/null 2>&1; fi
+    EXISTING_RANGES=$(dynamic_objects -l | awk -v tgt="$obj_name" '/^object name/ { cur=$4 } /^range/ { if (cur == tgt) print $4, $5 }')
+    NEEDS_ADDING=1
+    if [ -n "$EXISTING_RANGES" ]; then
+        for old_range in $(echo "$EXISTING_RANGES" | tr ' ' '_'); do
+            old_start="\${old_range%_*}"; old_end="\${old_range#*_}"
+            if [ "$old_start" = "$new_start" ] && [ "$old_end" = "$new_end" ]; then NEEDS_ADDING=0; else dynamic_objects -o "$obj_name" -r "$old_start" "$old_end" -d >/dev/null 2>&1; fi
+        done
+    fi
+    if [ "$NEEDS_ADDING" -eq 1 ]; then dynamic_objects -o "$obj_name" -r "$new_start" "$new_end" -a >/dev/null 2>&1; fi
+done
+MAIN_SCRIPT
+
+chmod +x /storage/dyn_obj_update.sh
+
+# Safely append to userScript (DO NOT OVERWRITE)
+if ! grep -q "/storage/dyn_obj_update.sh" /pfrm2.0/etc/userScript 2>/dev/null; then
+    echo "/storage/dyn_obj_update.sh &" >> /pfrm2.0/etc/userScript
+    chmod +x /pfrm2.0/etc/userScript
+fi
+
+# Setup Cron
+CRON_FILE="/var/spool/cron/crontabs/admin"
+if ! grep -q "dyn_obj_update.sh" "$CRON_FILE" 2>/dev/null; then
+    echo "*/5 * * * * /storage/dyn_obj_update.sh" >> "$CRON_FILE"
+    killall -HUP crond
+fi
+
+# Execute immediately
+/storage/dyn_obj_update.sh &
+`;
+
+            var apiPayload = {
+                "script-name": "Deploy Dynamic Objects Script",
+                "script": scriptPayload,
+                "targets": [targetGateway]
+            };
+
+            // 3. Make API call securely using existing SmartConsole session
+            SMC.apiCall("run-script", apiPayload, function(response) {
+                document.getElementById("deployBtn").disabled = false;
+                if(response && response.tasks) {
+                    document.getElementById("log").innerText = "Execution Task Started Successfully.\nTask ID: " + response.tasks[0]["task-id"] + "\n\nCheck 'Recent Tasks' in the bottom left of SmartConsole to see the execution status.";
+                } else {
+                    document.getElementById("log").innerText = "API Response:\n" + JSON.stringify(response, null, 2);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
