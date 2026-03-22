@@ -7,23 +7,19 @@
     "product-url": "https://ivanlwdc.github.io/publictools/"
   },
   "extension-version-requirements": {
-    "minimum-version": "1.1"
+    "minimum-version": "1.2"
   },
   "locations": [
     {
-      "location": "context-menu",
+      "location": "bottom-pane",
       "relevant-types": [
         "gateway"
       ],
       "ui-element": {
-        "caption": "Deploy Dynamic Object Script",
+        "caption": "Deploy Script",
         "action": {
           "trigger-id": "deploy-script-action",
-          "url": "index.html",
-          "browser-window": {
-            "width": 800,
-            "height": 600
-          }
+          "url": "index.html"
         }
       }
     }
