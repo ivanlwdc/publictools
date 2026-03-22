@@ -19,7 +19,11 @@
         "caption": "Deploy Dynamic Object Script",
         "action": {
           "trigger-id": "deploy-script-action",
-          "url": "https://ivanlwdc.github.io/publictools/index.html"
+          "url": "index.html",
+          "browser-window": {
+            "width": 800,
+            "height": 600
+          }
         }
       }
     }
