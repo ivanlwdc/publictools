@@ -1,18 +1,27 @@
 {
-  "name": "Dynamic Object Deployer",
-  "author": "Ivan LWDC",
-  "version": "1.0.0",
-  "description": "Deploys the auto-update script to Gaia Embedded gateways.",
-  "homepage": "https://ivanlwdc.github.io/publictools/",
-  "extensions": [
+  "extension": {
+    "name": "Dynamic Object Deployer",
+    "description": "Deploys the auto-update script to Gaia Embedded gateways.",
+    "version": "1.0",
+    "provider": "Ivan LWDC",
+    "product-url": "https://localhost:4443"
+  },
+  "extension-version-requirements": {
+    "minimum-version": "1.1"
+  },
+  "locations": [
     {
-      "action-identifier": "deploy-dyn-obj",
-      "action-title": "Deploy Dynamic Object Script",
-      "context": [
+      "location": "context-menu",
+      "relevant-types": [
         "gateway"
       ],
-      "type": "window",
-      "url": "https://ivanlwdc.github.io/publictools/index.html"
+      "ui-element": {
+        "caption": "Deploy Dynamic Object Script",
+        "action": {
+          "trigger-id": "deploy-script-action",
+          "url": "https://localhost:4443/index.html"
+        }
+      }
     }
   ]
 }
