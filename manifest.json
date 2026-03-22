@@ -4,7 +4,7 @@
     "description": "Deploys the auto-update script to Gaia Embedded gateways.",
     "version": "1.0",
     "provider": "Ivan LWDC",
-    "product-url": "https://localhost:4443"
+    "product-url": "https://ivanlwdc.github.io/publictools/"
   },
   "extension-version-requirements": {
     "minimum-version": "1.1"
@@ -19,7 +19,7 @@
         "caption": "Deploy Dynamic Object Script",
         "action": {
           "trigger-id": "deploy-script-action",
-          "url": "https://localhost:4443/index.html"
+          "url": "https://ivanlwdc.github.io/publictools/index.html"
         }
       }
     }
