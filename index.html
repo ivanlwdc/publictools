@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Objects Installer</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body onload="initPlugin()">
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="icon"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM11 19.93C7.06 19.43 4 16.05 4 12C4 7.95 7.06 4.57 11 4.07V19.93ZM13 4.07C16.94 4.57 20 7.95 20 12C20 16.05 16.94 19.43 13 19.93V4.07Z" fill="#E45684"/></svg>
+                <h2>Dynamic Objects Installer</h2>
+            </div>
+            <p>Deploy the Dynamic Objects script to the selected Spark Gateway</p>
+        </header>
+        
+        <main>
+            <div class="card">
+                <div class="status-row">
+                    <span class="label">Target Gateway:</span>
+                    <span id="gateway-name" class="value loading">Loading context...</span>
+                </div>
+                
+                <button id="install-btn" class="btn" disabled>Install Script</button>
+            </div>
+
+            <div class="card log-container">
+                <h3>Execution Logs</h3>
+                <pre id="logs">Waiting for initialization...</pre>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js?v=23"></script>
+</body>
+</html>

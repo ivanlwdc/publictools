@@ -1,0 +1,133 @@
+cat << 'MAIN_SCRIPT' > /tmp/dyn_obj_update_new.sh
+#!/bin/sh
+# Dynamic Object Auto-Creation & Update Script (State-Aware)
+SCRIPT_VERSION="1.8"
+LOCKFILE="/tmp/dyn_obj_update.lock"
+
+
+
+
+
+# Prevent multiple instances
+if [ -f "$LOCKFILE" ]; then
+    PID=$(cat "$LOCKFILE")
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "Script already running (PID $PID). Exiting."
+        exit 0
+    fi
+fi
+echo $$ > "$LOCKFILE"
+trap "rm -f $LOCKFILE; exit" EXIT INT TERM
+
+echo "Running Dynamic Object Update Script v$SCRIPT_VERSION"
+
+
+
+
+MAX_WAIT=180
+WAIT_COUNT=0
+echo "Waiting for network interfaces to be ready (timeout: ${MAX_WAIT}s)..."
+while [ "$WAIT_COUNT" -lt "$MAX_WAIT" ]; do
+    if /pfrm2.0/bin/clish -c "show interfaces all" 2>/dev/null | grep -q "ipv4-address:[ \t]*[0-9]"; then
+        break
+    fi
+    sleep 5
+    WAIT_COUNT=$((WAIT_COUNT + 5))
+done
+echo "Interfaces detected. Processing Dynamic Objects..."
+
+
+ROUTES=$(ip route)
+IFACES=$(/pfrm2.0/bin/clish -c "show interfaces all")
+WANS=$(/pfrm2.0/bin/clish -c "show internet-connections")
+
+# Helper function to run dynamic_objects with retries for lock
+run_dyn() {
+    local cmd=$@
+    local retries=3
+    local count=0
+    while [ $count -lt $retries ]; do
+        $cmd && return 0
+        echo "Warning: command failed (attempt $((count+1))). Retrying in 2s..."
+        sleep 2
+        count=$((count+1))
+    done
+    echo "Error: command failed after $retries attempts."
+    return 1
+}
+
+PARSED_DATA=$(echo "$ROUTES" | awk -v ifaces="$IFACES" -v wans="$WANS" '
+function ip2int(ip,   a) { split(ip, a, "."); return (a[1] * 16777216) + (a[2] * 65536) + (a[3] * 256) + a[4] }
+function int2ip(num,   a, b, c, d) { a = int(num / 16777216) % 256; b = int(num / 65536) % 256; c = int(num / 256) % 256; d = int(num) % 256; return a"."b"."c"."d }
+function mask2cidr(mask,   a, i, cidr) { split(mask, a, "."); cidr = 0; for(i=1; i<=4; i++) { while(a[i] > 0) { cidr += a[i] % 2; a[i] = int(a[i] / 2) } } return cidr }
+function process_wan() { if (wan_name != "" && wan_ip != "" && wan_mask != "") { cidr = mask2cidr(wan_mask); ip_int = ip2int(wan_ip); mask_int = 4294967295 - (2^(32-cidr) - 1); net_int = 0; temp_ip = ip_int; temp_mask = mask_int; mult = 1; for (b=0; b<32; b++) { if ((temp_ip % 2) == 1 && (temp_mask % 2) == 1) net_int += mult; temp_ip = int(temp_ip / 2); temp_mask = int(temp_mask / 2); mult *= 2; } w_start_ip = int2ip(net_int); w_end_int = net_int + (2^(32-cidr)) - 1; w_end_ip = int2ip(w_end_int); print "NET_"wan_name, w_start_ip, w_end_ip; print "HOST_"wan_name, wan_ip, wan_ip; } wan_name = ""; wan_ip = ""; wan_mask = "" }
+BEGIN { n = split(ifaces, lines, "\n"); name = ""; for (i=1; i<=n; i++) { gsub(/\r/, "", lines[i]); if (lines[i] ~ /^name:/) { sub(/^name:/, "", lines[i]); name = lines[i]; gsub(/^[ \t]+|[ \t]+$/, "", name); gsub(/_Switch/, "", name); } if (lines[i] ~ /^ipv4-address:/) { sub(/^ipv4-address:/, "", lines[i]); ip = lines[i]; gsub(/^[ \t]+|[ \t]+$/, "", ip); if (ip != "" && name != "") ip_map[name] = ip } if (lines[i] ~ /^description:/) { sub(/^description:/, "", lines[i]); desc = lines[i]; gsub(/^[ \t]+|[ \t]+$/, "", desc); if (desc != "" && name != "") desc_map[name] = desc } } }
+$1 ~ /^[0-9]/ && $1 !~ /^127\./ { split($1, cidr_arr, "/"); start_ip = cidr_arr[1]; mask = cidr_arr[2]; if (mask == "") mask = 32; start_int = ip2int(start_ip); end_int = start_int + (2^(32-mask)) - 1; end_ip = int2ip(end_int); iface = ""; for(k=1; k<=NF; k++) { if ($k == "dev") { iface = $(k+1); break } } if (iface != "" && iface in desc_map) { print "NET_"desc_map[iface], start_ip, end_ip } }
+END { for (ifc in desc_map) { if (ip_map[ifc] != "") print "HOST_"desc_map[ifc], ip_map[ifc], ip_map[ifc] } w = split(wans, wlines, "\n"); wan_name = ""; wan_ip = ""; wan_mask = ""; for (i=1; i<=w; i++) { gsub(/\r/, "", wlines[i]); if (wlines[i] ~ /^id:/ && wan_name != "") process_wan(); if (wlines[i] ~ /^name:/) { sub(/^name:/, "", wlines[i]); wan_name = wlines[i]; gsub(/^[ \t]+|[ \t]+$/, "", wan_name) } if (wlines[i] ~ /^ip-address:/) { sub(/^ip-address:/, "", wlines[i]); wan_ip = wlines[i]; gsub(/^[ \t]+|[ \t]+$/, "", wan_ip) } if (wlines[i] ~ /^subnet-mask:/) { sub(/^subnet-mask:/, "", wlines[i]); wan_mask = wlines[i]; gsub(/^[ \t]+|[ \t]+$/, "", wan_mask) } } process_wan() }')
+
+if [ -z "$PARSED_DATA" ]; then
+    echo "--- DEBUG: PARSED_DATA is EMPTY ---"
+else
+    echo "--- DEBUG: PARSED_DATA SUMMARY ---"
+    echo "$PARSED_DATA" | sed 's/^/  /'
+fi
+
+# Optimization: Fetch database once before the loop
+echo "Fetching Dynamic Objects database for state comparison..."
+DYN_DB=$(dynamic_objects -l)
+
+echo "$PARSED_DATA" | while read obj_name new_start new_end; do
+    [ -z "$obj_name" ] && continue
+    if ! echo "$DYN_DB" | grep -q "object name : $obj_name$"; then 
+        echo "[Action] Creating dynamic object: $obj_name"
+        run_dyn dynamic_objects -n "$obj_name"
+    fi
+    # Use cached DB for range comparison
+    EXISTING_RANGES=$(echo "$DYN_DB" | awk -v tgt="$obj_name" '/^object name/ { cur=$4 } /^range/ { if (cur == tgt) print $4, $5 }')
+    NEEDS_ADDING=1
+    if [ -n "$EXISTING_RANGES" ]; then
+        for old_range in $(echo "$EXISTING_RANGES" | tr ' ' '_'); do
+            old_start="${old_range%_*}"
+            old_end="${old_range#*_}"
+            if [ "$old_start" = "$new_start" ] && [ "$old_end" = "$new_end" ]; then 
+                NEEDS_ADDING=0
+            else 
+                echo "[Action] Deleting old range for $obj_name: $old_start to $old_end"
+                run_dyn dynamic_objects -o "$obj_name" -r "$old_start" "$old_end" -d
+            fi
+        done
+    fi
+    if [ "$NEEDS_ADDING" -eq 1 ]; then 
+        echo "[Action] Adding new range for $obj_name: $new_start to $new_end"
+        run_dyn dynamic_objects -o "$obj_name" -r "$new_start" "$new_end" -a
+    fi
+done
+MAIN_SCRIPT
+
+if [ -f /storage/dyn_obj_update.sh ] && cmp -s /tmp/dyn_obj_update_new.sh /storage/dyn_obj_update.sh; then
+    echo "Dynamic object script is already up to date. Skipping update."
+    rm -f /tmp/dyn_obj_update_new.sh
+else
+    echo "Installing/Updating dynamic object script..."
+    mv -f /tmp/dyn_obj_update_new.sh /storage/dyn_obj_update.sh
+    chmod +x /storage/dyn_obj_update.sh
+fi
+
+# Safely append to userScript (DO NOT OVERWRITE)
+if ! grep -q "/storage/dyn_obj_update.sh" /pfrm2.0/etc/userScript 2>/dev/null; then
+    echo "Adding script to startup persistence..."
+    echo "(sleep 60; /storage/dyn_obj_update.sh) &" >> /pfrm2.0/etc/userScript
+    chmod +x /pfrm2.0/etc/userScript
+fi
+
+# --- CLEANUP CRON (Now Startup-Only) ---
+CRON_FILE="/var/spool/cron/crontabs/admin"
+if [ -f "$CRON_FILE" ] && grep -q "dyn_obj_update.sh" "$CRON_FILE"; then
+    echo "Removing old cron job (Switching to Startup-Persistence Only)..."
+    sed -i '/dyn_obj_update.sh/d' "$CRON_FILE"
+    killall -HUP crond
+fi
+
+# Execute immediately in background one time
+echo "Executing update in background..."
+/storage/dyn_obj_update.sh >/dev/null 2>&1 &

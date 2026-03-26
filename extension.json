@@ -1,0 +1,43 @@
+{
+  "extension": {
+    "name": "Dynamic Objects Installer",
+    "provider": "localhost",
+    "version": "1.0",
+    "description": "Install Dynamic Objects script to target Gateway",
+    "product-url": "https://ivanlwdc.github.io/publictools/index.html",
+    "extension-version-requirements": {
+      "minimum-version": "1.2"
+    }
+  },
+  "locations": [
+    {
+      "location": "toolbar",
+      "relevant-types": [
+        "gateways"
+      ],
+      "ui-element": {
+        "type": "menu",
+        "caption": "Install Dynamic Objects Updater",
+        "action": {
+          "browser-window": {
+            "modal-dialog": false,
+            "min-height": "650",
+            "min-width": "850"
+          },
+          "details-level": "full",
+          "method": "get",
+          "trigger-id": "get-work-session",
+          "url": "https://ivanlwdc.github.io/publictools/index.html"
+        }
+      }
+    }
+  ],
+  "requested-permissions": {
+    "client": [
+      "get-session",
+      "run-commands",
+      "get-read-only-session",
+      "run-read-only-commands"
+    ]
+  }
+}
