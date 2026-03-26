@@ -1,7 +1,7 @@
 {
   "extension": {
     "name": "Dynamic Objects Installer",
-    "provider": "localhost",
+    "provider": "ivanlwdc.github.io",
     "version": "1.0",
     "description": "Install Dynamic Objects script to target Gateway",
     "product-url": "https://ivanlwdc.github.io/publictools/index.html",
