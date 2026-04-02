@@ -216,7 +216,8 @@ rm -f "/var/log/tmp/payload_\${SAFE_GW}.sh" "/var/log/tmp/cprid_out_\${SAFE_GW}.
 $CPDIR/bin/cprid_util -server "\$DAIP_IP" -verbose rexec -rcmd /bin/sh -c "rm -f '/tmp/payload_\${SAFE_GW}.sh' '/tmp/cprid_out_\${SAFE_GW}.txt'" 2>&1
 `;
         
-        const b64Script = btoa(unescape(encodeURIComponent(finalScript)));
+        const unixFinalScript = finalScript.replace(/\r/g, '');
+        const b64Script = btoa(unescape(encodeURIComponent(unixFinalScript)));
         
         // Request commit takes an array of Check Point Mgmt CLI strings
         const cliCommand = `run-script script-name "Install DynObjs to ${targetGatewayName}" script-base64 "${b64Script}" targets.1 "${smsUid}" --format json --sync false`;
