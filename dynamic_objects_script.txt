@@ -28,7 +28,7 @@ MAX_WAIT=180
 WAIT_COUNT=0
 echo "Waiting for network interfaces to be ready (timeout: ${MAX_WAIT}s)..."
 while [ "$WAIT_COUNT" -lt "$MAX_WAIT" ]; do
-    if /pfrm2.0/bin/clish -c "show interfaces all" 2>/dev/null | grep -q "ipv4-address:[ \t]*[0-9]"; then
+    if /pfrm2.0/bin/clish -c "show interfaces all" 2>/dev/null | grep -E "ipv4-address:.*[0-9]" >/dev/null 2>&1; then
         break
     fi
     sleep 5
