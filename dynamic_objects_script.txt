@@ -4,10 +4,6 @@ cat << 'MAIN_SCRIPT' > /tmp/dyn_obj_update_new.sh
 SCRIPT_VERSION="1.8"
 LOCKFILE="/tmp/dyn_obj_update.lock"
 
-
-
-
-
 # Prevent multiple instances
 if [ -f "$LOCKFILE" ]; then
     PID=$(cat "$LOCKFILE")
@@ -21,9 +17,6 @@ trap "rm -f $LOCKFILE; exit" EXIT INT TERM
 
 echo "Running Dynamic Object Update Script v$SCRIPT_VERSION"
 
-
-
-
 MAX_WAIT=180
 WAIT_COUNT=0
 echo "Waiting for network interfaces to be ready (timeout: ${MAX_WAIT}s)..."
@@ -35,7 +28,6 @@ while [ "$WAIT_COUNT" -lt "$MAX_WAIT" ]; do
     WAIT_COUNT=$((WAIT_COUNT + 5))
 done
 echo "Interfaces detected. Processing Dynamic Objects..."
-
 
 ROUTES=$(ip route)
 IFACES=$(/pfrm2.0/bin/clish -c "show interfaces all")
@@ -118,12 +110,31 @@ else
     chmod +x /pfrm2.0/etc/dyn_obj_update.sh
 fi
 
-# Safely append to userScript (DO NOT OVERWRITE)
-if ! grep -q "/pfrm2.0/etc/dyn_obj_update.sh" /pfrm2.0/etc/userScript 2>/dev/null; then
-    echo "Adding script to startup persistence..."
-    echo "(sleep 60; /pfrm2.0/etc/dyn_obj_update.sh) &" >> /pfrm2.0/etc/userScript
-    chmod +x /pfrm2.0/etc/userScript
+# Safely handle userScript startup persistence
+USERSCRIPT="/pfrm2.0/etc/userScript"
+NEW_ENTRY="(sleep 60; /pfrm2.0/etc/dyn_obj_update.sh) &"
+OLD_PATH="/storage/dyn_obj_update.sh"
+NEW_PATH="/pfrm2.0/etc/dyn_obj_update.sh"
+
+if [ -f "$USERSCRIPT" ]; then
+    # Remove legacy /storage entry if present
+    if grep -q "$OLD_PATH" "$USERSCRIPT"; then
+        echo "Removing legacy script entry from userScript..."
+        sed -i "\|$OLD_PATH|d" "$USERSCRIPT"
+    fi
+
+    # Append new path if not present
+    if ! grep -q "$NEW_PATH" "$USERSCRIPT"; then
+        echo "Adding script to startup persistence..."
+        echo "$NEW_ENTRY" >> "$USERSCRIPT"
+    fi
+else
+    # Create userScript if missing
+    echo "Creating userScript and adding startup persistence..."
+    echo "$NEW_ENTRY" > "$USERSCRIPT"
 fi
+
+chmod +x "$USERSCRIPT"
 
 # --- CLEANUP CRON (Now Startup-Only) ---
 CRON_FILE="/var/spool/cron/crontabs/admin"
